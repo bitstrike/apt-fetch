@@ -1,0 +1,15 @@
+{
+    "uuid": "apt-fetch@bitcrash",
+    "name": "apt-fetch",
+    "description": "Fetch .deb files via apt and cron for speedy updates",
+    "version": "1.0",
+    "cinnamon-version": "4.0",
+    "author": "bitstrike",
+    "url": "https://github.com/bitstrike/apt-fetch",
+    "icon": "inactive.png",
+    "settings-schema": "schemas/settings-schema.json",
+    "applet": ["apt-fetch@bitcrash.js"],
+    "settings": "schemas/settings-schema.json",
+    "uuid-old": "testapp@bitcrash"
+  }
+  

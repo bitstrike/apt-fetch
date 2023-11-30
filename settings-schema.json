@@ -1,0 +1,14 @@
+[
+    {
+      "uuid": "apt-fetch@bitcrash",
+      "name": "main",
+      "schema": {
+        "command": {
+          "type": "string",
+          "default": "testapp_applet.sh",
+          "description": "Command to run when the applet is clicked"
+        }
+      }
+    }
+  ]
+  
