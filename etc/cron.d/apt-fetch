@@ -1,0 +1,2 @@
+# don't run this too often or you may get dropped by the mirrors
+*/30 * * * * root /usr/local/bin/apt-fetch
