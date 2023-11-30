@@ -8,7 +8,7 @@
     "url": "https://github.com/bitstrike/apt-fetch",
     "icon": "inactive.png",
     "settings-schema": "schemas/settings-schema.json",
-    "applet": ["apt-fetch@bitcrash.js"],
+    "applet": ["applet.js"],
     "settings": "schemas/settings-schema.json",
     "uuid-old": "testapp@bitcrash"
   }
