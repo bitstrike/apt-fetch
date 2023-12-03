@@ -6,7 +6,7 @@
     "cinnamon-version": "4.0",
     "author": "bitstrike",
     "url": "https://github.com/bitstrike/apt-fetch",
-    "icon": "inactive.png",
+    "icon": "transmission.png",
     "settings-schema": "schemas/settings-schema.json",
     "applet": ["applet.js"],
     "settings": "schemas/settings-schema.json",
