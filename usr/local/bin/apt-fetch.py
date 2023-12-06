@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import subprocess
 from datetime import datetime, timedelta
@@ -20,19 +21,17 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
 # Set up the TimedRotatingFileHandler
 log_filename = "/var/log/apt-fetch-{}.log".format(datetime.now().strftime("%A").lower())
-handler = TimedRotatingFileHandler(log_filename, when='midnight', backupCount=6, interval=1, utc=True)
 
-# Add the formatter to the handler
-handler.setFormatter(formatter)
-
-# Add the handler to the logger
-logger.addHandler(handler)
 
 class STATS:
     def __init__(self):
         self.num_runs = 0
         self.num_complete = 0
         self.last_run = None
+        self.packages_queued = 0
+        self.archives_path = "/var/cache/apt/archives"
+        self.num_archived = 0
+        self.num_partial = 0
 
     def update(self, timestamp):
         self.num_runs += 1
@@ -43,10 +42,23 @@ class STATS:
         self.last_run = timestamp
 
 
+# get the number of packages waiting to be applied        
+def count_deb_packages(directory_path):
+    deb_count = 0
+    try:
+        if os.path.exists(directory_path) and os.path.isdir(directory_path):
+            for root, dirs, files in os.walk(directory_path):
+                deb_count += len([file for file in files if file.endswith(".deb")])
+    except Exception as e:
+        print(f"Error counting .deb packages in {directory_path}: {e}")
+    
+    return deb_count
+
+
+# check log file for statistics
 def get_status(stats):
     today = datetime.now().strftime("%Y-%m-%d")
     stats = STATS()
-    print (f"trying {log_filename}")
     try:
         with open(log_filename, "r") as f:
             lines = f.readlines()
@@ -60,7 +72,12 @@ def get_status(stats):
     except (FileNotFoundError, PermissionError) as e:
         print(f"Error reading: {e}")
     
+    # get number of packages staged
+    stats.num_archived = count_deb_packages(stats.archives_path)
+    # needs root - stats.num_partial = count_deb_packages(stats.partial_path)
+
     return stats
+
 
 # write/create a log file 
 def db(*args):
@@ -78,6 +95,7 @@ def db(*args):
         print(f"Error accessing the file: {e}")
 
 
+# remove apt-fetch lock file if found to be from an old run
 def remove_stale_lock(lock_file_path, threshold):
     do_remove = False
     if os.path.exists(lock_file_path):
@@ -112,7 +130,7 @@ def remove_stale_lock(lock_file_path, threshold):
             db(f"Stale lock file found for PID {pid}. Removing.")
             os.remove(lock_file_path)
 
-
+# run apt to fetch all updates and cache them in /var/cache/apt
 def fetch_updates(stats):
     remove_stale_lock(lock_file, lock_file_max_age)
 
@@ -151,21 +169,35 @@ def fetch_updates(stats):
 def main():
     parser = argparse.ArgumentParser(description='Fetch updates and display status.')
     parser.add_argument('-s', '--status', action='store_true', help='Display status')
+    parser.add_argument('-j', '--json_status', action='store_true', help='Display status as JSON')
     stats = STATS()
     args = parser.parse_args()
 
-    if args.status:
+    if args.json_status:
         stats = get_status(stats)
-        
+        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived}
+        print (json.dumps(data, indent=2))
+
+    elif args.status:
+        print (f"trying {log_filename}")
+        stats = get_status(stats)
         print(f"Number of runs today: {stats.num_runs}")
         print(f"Number of complete runs: {stats.num_complete}")
+        print(f"{stats.num_archived} archived .deb packages queued and {stats.num_partial} partially downloaded")
 
         if stats.last_run:
             print(f"Last run timestamp: {stats.last_run}")
     else:
+        handler = TimedRotatingFileHandler(log_filename, when='midnight', backupCount=6, interval=1, utc=True)
+
+        # Add the formatter to the handler
+        handler.setFormatter(formatter)
+
+        # Add the handler to the logger
+        logger.addHandler(handler)
+
         fetch_updates(stats)
 
-    
 
 
 if __name__ == "__main__":
