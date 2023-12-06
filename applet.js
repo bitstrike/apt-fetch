@@ -3,6 +3,8 @@ const PopupMenu = imports.ui.popupMenu;
 const St = imports.gi.St;
 const Gio = imports.gi.Gio;
 const Util = imports.misc.util;
+const MessageTray = imports.ui.messageTray;
+const Main = imports.ui.main;
 
 const GLib      = imports.gi.GLib;
 const Mainloop  = imports.mainloop;
@@ -89,15 +91,26 @@ class AptFetchApplet extends Applet.IconApplet {
         });
     }
 
+    _showNotification()
+    {
+        let source = new MessageTray.SystemNotificationSource();
+        Main.messageTray.add(source);
+        let notification = new MessageTray.Notification(source, _("Timer"), _("Time's up!"));
+        notification.setTransient(false);
+        notification.setUrgency(MessageTray.Urgency.NORMAL);
+        source.notify(notification);
+    }
+
     _onStatusClick() {
-        //let statusResult = this._getThisStatus(); 
         var parsedData = JSON.parse(LastRun);
         if (parsedData.last_run.toLowerCase() === "pending") 
         {
             Util.spawnCommandLine(`zenity --info --text="No status avaialable yet, apt-fetch is pending."`);
         }
         else
-            Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.num_archived} packages are awaiting installation."`);
+            Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.fetch_errors} errors were encountered.\n${parsedData.num_archived} packages are awaiting installation."`);
+
+
     }
     
     // Check the existence of /var/lock/apt-fetch which signals that apt-fetch.py is currently running
@@ -119,6 +132,7 @@ class AptFetchApplet extends Applet.IconApplet {
         // item clicked
         Util.spawnCommandLine("mintupdate");
     }
+
     _onAboutClick() {
         
         let appletUUID = this.metadata.uuid;
@@ -127,7 +141,6 @@ class AptFetchApplet extends Applet.IconApplet {
         Util.spawnCommandLine("testapp_applet.sh");
         Cinnamon.AppletAbout.show(appletUUID, applet.metadata.name, applet.version, aboutText);
     }
-
 
     // make applet menu visible
     on_applet_clicked(event) {
