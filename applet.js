@@ -7,8 +7,18 @@ const Util = imports.misc.util;
 const GLib      = imports.gi.GLib;
 const Mainloop  = imports.mainloop;
 const Lang      = imports.lang;
-
 const Settings = imports.ui.settings;
+
+let RunsToday = 0;
+let CompleteRuns = 0;
+let CurrentLogFileName = "none"
+let LastRun = "none";
+
+
+function db (s)
+{
+    global.log (`apt-fetch: ${s}`);
+}
 
 
 
@@ -42,6 +52,14 @@ class AptFetchApplet extends Applet.IconApplet {
         this.menuItem.connect('activate', this._onAboutClick);
         this.menu.addMenuItem(this.menuItem);
         
+        LastRun = '{ "last_run" : "pending" }';
+        Util.spawnCommandLineAsyncIO("apt-fetch.py -j", (stdout) => {LastRun = stdout})
+
+        this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 60, () => {
+            Util.spawnCommandLineAsyncIO("apt-fetch.py -j", (stdout) => {LastRun = stdout})
+            return true;  // Repeat the timer
+        });
+        
         // Schedule state check every 5 seconds
         this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
             // Update the icon and tooltip based on the state of /tmp/apt-lock
@@ -49,10 +67,41 @@ class AptFetchApplet extends Applet.IconApplet {
             this.set_applet_tooltip(this._stateCheck() ? "apt-fetch is downloading updates" : "apt-fetch is idle");
             return true;  // Repeat the timer
         });
+
+        // blink icon while downloading
+        this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+            if (this._stateCheck() == true) 
+            {
+                // Toggle the icon between "inactive" and the original symbolic name
+                if (this._isIconInactive) 
+                {
+                    this.set_applet_icon_symbolic_name("transferring");
+                } 
+                else 
+                {
+                    this.set_applet_icon_symbolic_name("active");
+                }
+                
+                this._isIconInactive = !this._isIconInactive;
+            }
+
+            return true;  // Repeat the timer
+        });
     }
 
+    _onStatusClick() {
+        //let statusResult = this._getThisStatus(); 
+        var parsedData = JSON.parse(LastRun);
+        if (parsedData.last_run.toLowerCase() === "pending") 
+        {
+            Util.spawnCommandLine(`zenity --info --text="No status avaialable yet, apt-fetch is pending."`);
+        }
+        else
+            Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.num_archived} packages are awaiting installation."`);
+    }
+    
+    // Check the existence of /var/lock/apt-fetch which signals that apt-fetch.py is currently running
     _stateCheck() {
-        // Check the existence of /tmp/apt-lock
         try 
         {
             let file = Gio.file_new_for_path("/var/lock/apt-fetch");
@@ -62,13 +111,10 @@ class AptFetchApplet extends Applet.IconApplet {
         {
             return false;
         }
+
     }
 
-    _onStatusClick() {
-        // item clicked
-        Util.spawnCommandLine("testapp_applet.sh");
-    }    
-    
+   
     _onMintUpdateClick() {
         // item clicked
         Util.spawnCommandLine("mintupdate");
@@ -82,20 +128,7 @@ class AptFetchApplet extends Applet.IconApplet {
         Cinnamon.AppletAbout.show(appletUUID, applet.metadata.name, applet.version, aboutText);
     }
 
-    _onFooAboutClick() {
-        // Get the UUID of the applet from its metadata
-        let appletUUID = this.metadata.uuid;
 
-        // Get the applet object using the UUID
-        let applet = Cinnamon.AppSystem.get_default().get_app(appletUUID);
-
-        // Create the text for the about dialog
-        let aboutText = "Your Applet\nVersion: " + applet.version + "\n\nCopyright © Your Company";
-
-        // Show the applet's about dialog with relevant information
-        Cinnamon.AppletAbout.show(appletUUID, applet.metadata.name, applet.version, aboutText);
-    }
-    
     // make applet menu visible
     on_applet_clicked(event) {
         this.menu.toggle();
