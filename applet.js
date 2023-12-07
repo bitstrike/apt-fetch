@@ -5,23 +5,21 @@ const Gio = imports.gi.Gio;
 const Util = imports.misc.util;
 const MessageTray = imports.ui.messageTray;
 const Main = imports.ui.main;
-
 const GLib      = imports.gi.GLib;
 const Mainloop  = imports.mainloop;
 const Lang      = imports.lang;
 const Settings = imports.ui.settings;
 
-let RunsToday = 0;
-let CompleteRuns = 0;
-let CurrentLogFileName = "none"
 let LastRun = "none";
+let lastNotificationTime = 0;
+const OneDayInSeconds = 24 * 60 * 60;
+const NotifcationInterval = 24 * 60 * 60;
 
-
+// write something to LookingGlass log
 function db (s)
 {
     global.log (`apt-fetch: ${s}`);
 }
-
 
 
 class AptFetchApplet extends Applet.IconApplet {
@@ -34,7 +32,7 @@ class AptFetchApplet extends Applet.IconApplet {
         // tray popup label
         this.set_applet_tooltip("Applet Label");
 
-        // menu popup when icon clicked
+        // menu popup when tray icon clicked
         this.menuManager = new PopupMenu.PopupMenuManager(this);
         this.menu = new Applet.AppletPopupMenu(this, orientation);
         this.menuManager.addMenu(this.menu);
@@ -49,10 +47,6 @@ class AptFetchApplet extends Applet.IconApplet {
         this.menuItem.connect('activate', this._onMintUpdateClick);
         this.menu.addMenuItem(this.menuItem);
 
-        this._onAboutClick = this._onAboutClick.bind(this);
-        this.menuItem = new PopupMenu.PopupMenuItem("About");
-        this.menuItem.connect('activate', this._onAboutClick);
-        this.menu.addMenuItem(this.menuItem);
         
         LastRun = '{ "last_run" : "pending" }';
         Util.spawnCommandLineAsyncIO("apt-fetch.py -j", (stdout) => {LastRun = stdout})
@@ -70,8 +64,15 @@ class AptFetchApplet extends Applet.IconApplet {
             return true;  // Repeat the timer
         });
 
+
         // blink icon while downloading
         this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+            // check for daily notification
+            if (this._checkNotificationTimeout() == true)
+            {
+                this._showNotification ("(apt-fetch) Updates Are Available", "Updates are available to be applied to your system.\nOpen Update Manager to apply them.")
+            }
+                
             if (this._stateCheck() == true) 
             {
                 // Toggle the icon between "inactive" and the original symbolic name
@@ -91,15 +92,51 @@ class AptFetchApplet extends Applet.IconApplet {
         });
     }
 
-    _showNotification()
+
+    _checkNotificationTimeout()
+    {
+        // Check if a day has passed since the last notification
+        const currentTime = Math.floor(Date.now() / 1000); // current time in seconds
+        const parsedData = JSON.parse(LastRun);
+
+        // if updates have been downloaded and desktop has just been logged into
+        if (parsedData.num_archived > 0)
+        {
+            if (lastNotificationTime == 0)
+            {
+                lastNotificationTime = currentTime;
+                return true;
+            }
+        }
+
+        // if time since last notification has expired, and updates are available, notify again
+        if (currentTime - lastNotificationTime >= NotifcationInterval) 
+        {
+            // don't notify if nothing to update
+            if (parsedData.num_archived > 0)
+            {
+                // Update the last notification time
+                db ("_checkNotificationTimeout:parseddata is > 0");
+                lastNotificationTime = currentTime;
+                return true
+            }
+        }
+
+        return false
+    }
+    
+
+    _showNotification(title, message) 
     {
         let source = new MessageTray.SystemNotificationSource();
         Main.messageTray.add(source);
-        let notification = new MessageTray.Notification(source, _("Timer"), _("Time's up!"));
+    
+        let notification = new MessageTray.Notification(source, title, message);
         notification.setTransient(false);
         notification.setUrgency(MessageTray.Urgency.NORMAL);
         source.notify(notification);
     }
+
 
     _onStatusClick() {
         var parsedData = JSON.parse(LastRun);
@@ -126,21 +163,12 @@ class AptFetchApplet extends Applet.IconApplet {
         }
 
     }
-
    
     _onMintUpdateClick() {
         // item clicked
         Util.spawnCommandLine("mintupdate");
     }
 
-    _onAboutClick() {
-        
-        let appletUUID = this.metadata.uuid;
-        let applet = Cinnamon.AppSystem.get_default().get_app(appletUUID);
-        let aboutText = "Your applet name\nVersion: \n\nCopyright © Your Name";
-        Util.spawnCommandLine("testapp_applet.sh");
-        Cinnamon.AppletAbout.show(appletUUID, applet.metadata.name, applet.version, aboutText);
-    }
 
     // make applet menu visible
     on_applet_clicked(event) {
