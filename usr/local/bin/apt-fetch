@@ -15,11 +15,19 @@ db()
 # Check if the lock file exists
 if [ -f "${lock_file}" ]; then
     do_remove=0
+<<<<<<< HEAD
+=======
+    db ("found a lock file")
+>>>>>>> dev
 
     # check age of lockfile and remove and continue if too old
     file_timestamp=$(stat -c "%Y" "${lock_file}")
     current_time=$(date +%s)
     age=$((current_time - file_timestamp))
+<<<<<<< HEAD
+=======
+    db ("found a lock file ${age} seconds old")
+>>>>>>> dev
  
     # Read PID from the lock file
     pid=$(cat "$lock_file" 2>/dev/null)
@@ -53,9 +61,16 @@ echo "$$" > "${lock_file}"
 # Run apt-get update and apt-get dist-upgrade download only with rate limit
 db "checking latest apt.."
 /usr/bin/apt-get update >> "${log_file}" 2>&1 && /usr/bin/apt-get dist-upgrade -y --quiet --download-only -o Acquire::http::Dl-Limit="${rate_limit}" >> "${log_file}" 2>&1
+<<<<<<< HEAD
 db "complete."
 
 # Remove the lock file after completing the update and upgrade
 rm "${lock_file}"
+=======
+
+# Remove the lock file after completing the update and upgrade
+rm "${lock_file}"
+db "apt-fetch complete."
+>>>>>>> dev
 
 
