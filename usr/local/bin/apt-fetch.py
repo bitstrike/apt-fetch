@@ -32,6 +32,7 @@ class STATS:
         self.archives_path = "/var/cache/apt/archives"
         self.num_archived = 0
         self.num_partial = 0
+        self.fetch_errors = 0
 
     def update(self, timestamp):
         self.num_runs += 1
@@ -68,7 +69,9 @@ def get_status(stats):
                 if "apt-fetch complete" in line and today in line:
                     stats.update_complete(line.split("]")[0][1:])
                     stats.last_run = line.split("]")[0][1:]
-    
+                if "Failed" in line:
+                    stats.fetch_errors += 1
+
     except (FileNotFoundError, PermissionError) as e:
         print(f"Error reading: {e}")
     
@@ -175,7 +178,7 @@ def main():
 
     if args.json_status:
         stats = get_status(stats)
-        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived}
+        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "fetch_errors" : stats.fetch_errors}
         print (json.dumps(data, indent=2))
 
     elif args.status:
@@ -183,6 +186,7 @@ def main():
         stats = get_status(stats)
         print(f"Number of runs today: {stats.num_runs}")
         print(f"Number of complete runs: {stats.num_complete}")
+        print(f"Number of Errors encountered: {stats.fetch_errors}")
         print(f"{stats.num_archived} archived .deb packages queued and {stats.num_partial} partially downloaded")
 
         if stats.last_run:
