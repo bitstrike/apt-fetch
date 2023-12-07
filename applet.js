@@ -12,8 +12,10 @@ const Settings = imports.ui.settings;
 
 let LastRun = "none";
 let lastNotificationTime = 0;
-const OneDayInSeconds = 24 * 60 * 60;
-const NotifcationInterval = 24 * 60 * 60;
+const OneHourInSeconds = 60 * 60
+const OneDayInSeconds = 24 * OneHourInSeconds;
+const NotifcationInterval = OneHourInSeconds * 4;
+const UUID = "apt-fetch@bitcrash"; // Applet UUID
 
 // write something to LookingGlass log
 function db (s)
@@ -25,6 +27,7 @@ function db (s)
 class AptFetchApplet extends Applet.IconApplet {
     constructor(metadata, orientation, panel_height, instance_id) {
         super(orientation, panel_height, instance_id);
+        this._notifications = true;
 
         // tray icon
         this.set_applet_icon_symbolic_name("inactive");
@@ -37,26 +40,35 @@ class AptFetchApplet extends Applet.IconApplet {
         this.menu = new Applet.AppletPopupMenu(this, orientation);
         this.menuManager.addMenu(this.menu);
 
+        // status menu item
         this._onStatusClick = this._onStatusClick.bind(this);
         this.menuItem = new PopupMenu.PopupMenuItem("Status");
         this.menuItem.connect('activate', this._onStatusClick);
         this.menu.addMenuItem(this.menuItem);
-        
+
+        // notification toggle
+        let iconName = this._notifications ? "aptdaemon-upgrade" : "aptdaemon-delete";
+        this.notification_toggle = new PopupMenu.PopupSwitchIconMenuItem( _("Notifications"), this._notifications, iconName, St.IconType.SYMBOLIC);
+        this.notification_toggle.connect('toggled', Lang.bind(this, this._launch_after_toggle));
+        this.menu.addMenuItem(this.notification_toggle);
+  
+        // update manager item
         this._onMintUpdateClick = this._onMintUpdateClick.bind(this);
         this.menuItem = new PopupMenu.PopupMenuItem("Update Manager");
         this.menuItem.connect('activate', this._onMintUpdateClick);
         this.menu.addMenuItem(this.menuItem);
 
-        
+        // seed LastRun with something usable and call apt-fetch
         LastRun = '{ "last_run" : "pending" }';
         Util.spawnCommandLineAsyncIO("apt-fetch.py -j", (stdout) => {LastRun = stdout})
 
+        // run apt-fetch regularly to monitor status 
         this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 60, () => {
             Util.spawnCommandLineAsyncIO("apt-fetch.py -j", (stdout) => {LastRun = stdout})
             return true;  // Repeat the timer
         });
         
-        // Schedule state check every 5 seconds
+        // Schedule state check of lock file every 5 seconds and update tooltip
         this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
             // Update the icon and tooltip based on the state of /tmp/apt-lock
             this.set_applet_icon_symbolic_name(this._stateCheck() ? "active" : "inactive");
@@ -64,13 +76,13 @@ class AptFetchApplet extends Applet.IconApplet {
             return true;  // Repeat the timer
         });
 
-
-        // blink icon while downloading
+        // update the tray icon while apt-fetch is downloading packages
         this._iconTimer = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+            
             // check for daily notification
             if (this._checkNotificationTimeout() == true)
             {
-                this._showNotification ("(apt-fetch) Updates Are Available", "Updates are available to be applied to your system.\nOpen Update Manager to apply them.")
+                this._showNotification ("(apt-fetch) Updates Are Available", "Updates are available to be applied to your system.\nOpen Update Manager to apply them.\n")
             }
                 
             if (this._stateCheck() == true) 
@@ -92,7 +104,7 @@ class AptFetchApplet extends Applet.IconApplet {
         });
     }
 
-
+    // check if it's time to display the notification message again
     _checkNotificationTimeout()
     {
         // Check if a day has passed since the last notification
@@ -125,9 +137,17 @@ class AptFetchApplet extends Applet.IconApplet {
         return false
     }
     
-
+    // add a notification message to the Cinnamon notification system
+    // also this way: GLib.spawn_command_line_async('notify-send "Something" --icon=dialog-information'); 
     _showNotification(title, message) 
     {
+        // don't display notifications if toggled off in menu
+        if (this._notifications == false)
+        {
+            db ("notifications are toggled off");
+            return;
+        }
+
         let source = new MessageTray.SystemNotificationSource();
         Main.messageTray.add(source);
     
@@ -137,7 +157,7 @@ class AptFetchApplet extends Applet.IconApplet {
         source.notify(notification);
     }
 
-
+    // use Zenity to show the runtime stats for apt-fetch
     _onStatusClick() {
         var parsedData = JSON.parse(LastRun);
         if (parsedData.last_run.toLowerCase() === "pending") 
@@ -164,6 +184,7 @@ class AptFetchApplet extends Applet.IconApplet {
 
     }
    
+    // launch the mint update tool
     _onMintUpdateClick() {
         // item clicked
         Util.spawnCommandLine("mintupdate");
@@ -174,7 +195,15 @@ class AptFetchApplet extends Applet.IconApplet {
     on_applet_clicked(event) {
         this.menu.toggle();
     }
+  
+    // pop-down menu after toggle selected
+    _launch_after_toggle() {  
+        this._notifications ^= true;      
+        this.menu.toggle(); // Hide popup menu
+        db ("notifications are " + this._notifications);
+    }
 
+    // cleanup
     on_applet_removed_from_panel() {
         // Cleanup logic if needed
         if (this._iconTimer) {
@@ -182,6 +211,7 @@ class AptFetchApplet extends Applet.IconApplet {
         }        
     }
 
+    // cleanup
     destroy() {
         // Cleanup logic if needed
         super.destroy();        
