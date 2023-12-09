@@ -59,7 +59,7 @@
 
  Log files are stored in the `/var/log/` directory with filenames following the pattern `apt-fetch-{day}.log`.
 
- ### Contributing
+ 
+### License
 
- Contributions are welcome! Feel free to open issues, submit pull requests, or provide feedback to improve the functionality and usability of `apt-fetch`.
-
+This project is licensed under the [GNU General Public License (GPL-3.0)](LICENSE).
