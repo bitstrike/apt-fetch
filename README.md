@@ -1,6 +1,6 @@
  ## apt-fetch
 
- `apt-fetch` is a tool designed for automating the scheduled download of pending updates for Debian-based systems. The project consists of a cron job, and bash script, for scheduling downloads via apt, and a Cinnamon applet for monitoring the status of these scheduled downloads. The bash script creates daily log files in `/var/log/` as well as a lock file in `/var/lock` to indicate if another instance of the script is in process. If the system is rebooted while apt-fetch is active, the lock file will likely persist preventing apt-fetch from running again. apt-fetch will attempt to remove this lock file if older than a certain amount of time.
+ `apt-fetch` is a tool designed for automating the scheduled download of pending updates for Debian-based systems. The project consists of a cron job, and python script, for scheduling downloads via apt, and a Cinnamon applet for monitoring the status of these scheduled downloads. The script creates daily log files in `/var/log/` as well as a lock file in `/var/lock` to indicate if another instance of the script is in process. If the system is rebooted while apt-fetch is active, the lock file will likely persist preventing apt-fetch from running again. apt-fetch will attempt to remove this lock file if older than a certain amount of time.
 
  ### Features
 
