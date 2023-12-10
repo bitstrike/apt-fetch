@@ -2,6 +2,8 @@
 
  `apt-fetch` is a tool designed for automating the scheduled download of pending updates for Debian-based systems. The project consists of a cron job, and python script, for scheduling downloads via apt, and a Cinnamon applet for monitoring the status of these scheduled downloads. The script creates daily log files in `/var/log/` as well as a lock file in `/var/lock` to indicate if another instance of the script is in process. If the system is rebooted while apt-fetch is active, the lock file will likely persist preventing apt-fetch from running again. apt-fetch will attempt to remove this lock file if older than a certain amount of time.
 
+The status dialog is handled by the `Zenity` package so ensure this is available.
+ 
  ### Features
 
  - **Scheduled Downloads:** `apt-fetch` utilizes a cron job to automatically schedule the download of pending updates at specified intervals. 
@@ -13,25 +15,29 @@
  - **Lock Mechanism:** `apt-fetch` employs a lock mechanism to prevent multiple instances from running concurrently. This ensures the integrity of the update process and prevents potential conflicts.
 
  ### Installation
+ 1. **Install Zenity:**
+     ```bash
+     apt install zenity zenity-common
+     ```
 
- 1. **Clone the Repository:**
+ 2. **Clone the Repository:**
      ```bash
      git clone https://github.com/bitstrike/apt-fetch.git
      ```
 
- 2. **Install the Script:**
+ 3. **Install the Script:**
      ```bash
      sudo cp apt-fetch/usr/local/bin/apt-fetch.py /usr/local/bin/
      sudo chmod +x /usr/local/bin/apt-fetch.py
      ```
 
- 3. **Install the cron job:**
+ 4. **Install the cron job:**
      ```bash
      sudo cp apt-fetch/etc/cron.d/apt-fetch /etc/cron.d/
      sudo chmod 0644 /etc/cron.d/apt-fetch
      ```
 
- 4. **Install the Cinnamon Applet:**
+ 5. **Install the Cinnamon Applet:**
     Install the Cinnamon applet to monitor the status of scheduled downloads. The applet directory has a specific location and naming convention for desktop applets and must be named correctly.
     ```bash
     cd ~/.local/share/cinnamon/applets/
