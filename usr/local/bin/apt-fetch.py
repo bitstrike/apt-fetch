@@ -83,10 +83,11 @@ class DEB_PKG:
     - version (str): The version of the Debian package.
     - name (str): The name of the Debian package.
     """
-    def __init__(self, filename, version, name):
+    def __init__(self, filename, version, name, installed):
         self.filename = filename
         self.version = version
         self.name = name
+        self.installed = installed
         
 
 def get_pkgs():
@@ -106,13 +107,13 @@ def get_pkgs():
                     deb_file_path = os.path.join(root, deb_file)
                     package = get_package_info(deb_file_path)
                     deb_packages.append(package)
+                    
     except Exception as e:
         print(f"{RED_COLOR}Error reading .DEB packages in {ARCHIVES_PATH}: {e}{RESET_COLOR}")
     
     return deb_packages
         
 
-# check if a given DEB_PKG object is installed on the system
 def get_installed(deb_package):
     """
     Check if a Debian package is installed on the system.
@@ -147,7 +148,6 @@ def get_installed(deb_package):
     
 
 
-# remove packages which have already been installed
 def cleanup_cache(deb_package):
     """
     Remove a specified Debian package file from the /var/cache/apt/archives directory.
@@ -199,12 +199,14 @@ def get_package_info(package_file_path):
 
         name_line = next(line for line in dpkg_info_output.split('\n') if line.startswith(' Package:'))
         name = name_line.split(': ')[1].strip()
-
-        return DEB_PKG(filename=package_name, version=version, name=name)
+        
+        installed = get_installed(DEB_PKG(filename=package_name, version="", name="", installed=False))
+        
+        return DEB_PKG(filename=package_name, version=version, name=name, installed=installed)
 
     except subprocess.CalledProcessError as e:
         print(f"{RED_COLOR}Error running dpkg --info for {package_file_path}: {e}{RESET_COLOR}")
-        return DEB_PKG(filename=package_name, version="Not available", name="Not available")
+        return DEB_PKG(filename=package_name, version="Not available", name="Not available", installed=False)
 
   
 def count_deb_packages(directory_path):
@@ -367,33 +369,53 @@ def fetch_updates(stats):
     db("apt-fetch complete.")
 
 
-def manage_apt_cache(deb_packages):
+            
+def manage_apt_cache(deb_packages, json_output=False):
     """
     Manage the Apt cache, including checking package information, installation status,
     and cleaning up the cache based on command-line arguments.
     """
+    results = []
+
     for pkg in deb_packages:
-        print(f"Filename: {pkg.filename}")
-        print(f"Version: {pkg.version}")
-        print(f"Name: {pkg.name}")
+        result = {
+            "Filename": pkg.filename,
+            "Version": pkg.version,
+            "Name": pkg.name,
+            "Installed": False
+        }
 
         try:
             # Check if the package is installed
-            if get_installed(pkg):
-                print("Installed: Yes")
+            result["Installed"] = get_installed(pkg)
 
-                # Try to clean up the cache
-                if cleanup_cache(pkg):
-                    print("Cleanup succeeded")
-                else:
-                    print(f"{RED_COLOR}Cleanup failed{RESET_COLOR}")
+            # Try to clean up the cache
+            if result["Installed"]:
+                result["Cleanup"] = cleanup_cache(pkg)
             else:
-                print("Installed: No")
+                result["Cleanup"] = False
 
+            results.append(result)
         except Exception as e:
-            print(f"{RED_COLOR}Error: {e}{RESET_COLOR}")
-            
-            
+            results.append({"Error": str(e)})
+
+    if json_output:
+        print(json.dumps(results, indent=2))
+    else:
+        for result in results:
+            if "Error" in result:
+                print(f"{RED_COLOR}Error: {result['Error']}{RESET_COLOR}")
+            else:
+                print(f"Filename: {result['Filename']}")
+                print(f"Version: {result['Version']}")
+                print(f"Name: {result['Name']}")
+                print(f"Installed: {'Yes' if result['Installed'] else 'No'}")
+
+                if result["Installed"]:
+                    print("Cleanup succeeded" if result["Cleanup"] else f"{RED_COLOR}Cleanup failed{RESET_COLOR}")
+                print()  # Add a newline for better readability
+
+
 
 def main():
     """
@@ -413,7 +435,7 @@ def main():
     
     if args.pkg_info:
         deb_packages = get_pkgs()
-        manage_apt_cache(deb_packages)
+        manage_apt_cache(deb_packages, json_output=args.json_status)
                 
     elif args.json_status:
         stats = get_status(stats)
