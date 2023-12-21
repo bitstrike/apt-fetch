@@ -27,9 +27,10 @@ import apt
 RED_COLOR = '\033[91m'
 RESET_COLOR = '\033[0m'
 
-lock_file           = "/var/lock/apt-fetch"
-rate_limit          = "56K"
-lock_file_max_age   = 86400  # in seconds
+ARCHIVES_PATH       = "/var/cache/apt/archives"
+LOCK_FILE           = "/var/lock/apt-fetch"
+RATE_LIMIT          = "56K"
+LOCK_FILE_MAX_AGE   = 86400  # in seconds
 
 # Set up the logger
 logger = logging.getLogger('daily_logger')
@@ -39,16 +40,28 @@ logger.setLevel(logging.INFO)
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
 # Set up the TimedRotatingFileHandler
-log_filename = "/var/log/apt-fetch-{}.log".format(datetime.now().strftime("%A").lower())
+LOG_FILENAME = "/var/log/apt-fetch-{}.log".format(datetime.now().strftime("%A").lower())
 
-# info about apt-fetch execution
 class STATS:
+    """
+    A class to store statistics about apt-fetch execution.
+
+    Attributes:
+    - num_runs (int): The number of runs performed.
+    - num_complete (int): The number of complete runs.
+    - last_run (str): Timestamp of the last run.
+    - packages_queued (int): Number of packages in the queue.
+    - archives_path (str): Path to the APT archives.
+    - num_archived (int): Number of archived packages.
+    - num_partial (int): Number of partially downloaded packages.
+    - fetch_errors (int): Number of fetch errors.
+    """
     def __init__(self):
         self.num_runs = 0
         self.num_complete = 0
         self.last_run = None
         self.packages_queued = 0
-        self.archives_path = "/var/cache/apt/archives"
+        self.archives_path = ARCHIVES_PATH
         self.num_archived = 0
         self.num_partial = 0
         self.fetch_errors = 0
@@ -61,34 +74,55 @@ class STATS:
         self.num_complete += 1
         self.last_run = timestamp
 
-# info about deb packages
 class DEB_PKG:
+    """
+    A class to represent Debian packages.
+
+    Attributes:
+    - filename (str): The filename of the Debian package.
+    - version (str): The version of the Debian package.
+    - name (str): The name of the Debian package.
+    """
     def __init__(self, filename, version, name):
         self.filename = filename
         self.version = version
         self.name = name
         
-# build list of packages in /var/cache/apt/archives and return it
+
 def get_pkgs():
+    """
+    Build a list of Debian package files in the /var/cache/apt/archives directory.
+
+    Returns:
+    - list: List of DEB_PKG objects representing Debian packages.
+    """
     deb_packages = []
-    archives_path = "/var/cache/apt/archives"
     
     try:
-        if os.path.exists(archives_path) and os.path.isdir(archives_path):
-            for root, dirs, files in os.walk(archives_path):
+        if os.path.exists(ARCHIVES_PATH) and os.path.isdir(ARCHIVES_PATH):
+            for root, dirs, files in os.walk(ARCHIVES_PATH):
                 deb_files = [file for file in files if file.endswith(".deb")]
                 for deb_file in deb_files:
                     deb_file_path = os.path.join(root, deb_file)
                     package = get_package_info(deb_file_path)
                     deb_packages.append(package)
     except Exception as e:
-        print(f"{RED_COLOR}Error reading .DEB packages in {archives_path}: {e}{RESET_COLOR}")
+        print(f"{RED_COLOR}Error reading .DEB packages in {ARCHIVES_PATH}: {e}{RESET_COLOR}")
     
     return deb_packages
         
 
 # check if a given DEB_PKG object is installed on the system
 def get_installed(deb_package):
+    """
+    Check if a Debian package is installed on the system.
+
+    Parameters:
+    - deb_package (DEB_PKG): The Debian package to check.
+
+    Returns:
+    - bool: True if the package is installed and has the correct version, False otherwise.
+    """
     try:
         # Run dpkg-query command to check if the package is installed
         output = subprocess.check_output(["dpkg-query", "--show", deb_package.name], text=True, stderr=subprocess.STDOUT)
@@ -108,13 +142,22 @@ def get_installed(deb_package):
             return False
         else:
             # If the return status is different, there might be another problem
-            print(f"Error checking installation status for {deb_package.name}: {e}")
+            print(f"{RED_COLOR}Error checking installation status for {deb_package.name}: {e}{RESET_COLOR}")
             return False
     
 
 
 # remove packages which have already been installed
 def cleanup_cache(deb_package):
+    """
+    Remove a specified Debian package file from the /var/cache/apt/archives directory.
+
+    Parameters:
+    - deb_package (DEB_PKG): The Debian package to remove from the cache.
+
+    Returns:
+    - bool: True if the cleanup succeeds, False otherwise.
+    """
     try:
         # Remove the package file from /var/cache/apt/archives
         package_file_path = os.path.join("/var/cache/apt/archives", deb_package.filename)
@@ -135,6 +178,15 @@ def cleanup_cache(deb_package):
 
 # get info on packages in /var/cache/apt/archives
 def get_package_info(package_file_path):
+    """
+    Retrieve information about a Debian package file using the dpkg --info command.
+
+    Parameters:
+    - package_file_path (str): The path to the Debian package file.
+
+    Returns:
+    - DEB_PKG: DEB_PKG object representing Debian package information.
+    """
     package_name = os.path.basename(package_file_path)
 
     try:
@@ -155,25 +207,41 @@ def get_package_info(package_file_path):
         return DEB_PKG(filename=package_name, version="Not available", name="Not available")
 
   
-# get the number of packages waiting to be applied        
 def count_deb_packages(directory_path):
+    """
+    Count the number of Debian package files in a specified directory.
+
+    Parameters:
+    - directory_path (str): The path to the directory containing Debian packages.
+
+    Returns:
+    - int: The number of Debian package files.
+    """
     deb_count = 0
     try:
         if os.path.exists(directory_path) and os.path.isdir(directory_path):
             for root, dirs, files in os.walk(directory_path):
                 deb_count += len([file for file in files if file.endswith(".deb")])
     except Exception as e:
-        print(f"Error counting .deb packages in {directory_path}: {e}")
+        print(f"{RED_COLOR}Error counting .deb packages in {directory_path}: {e}{RESET_COLOR}")
     
     return deb_count
 
 
-# check log file for statistics
 def get_status(stats):
+    """
+    Retrieve status information from the log file.
+
+    Parameters:
+    - stats (STATS): STATS object to update with status information.
+
+    Returns:
+    - STATS: Updated STATS object.
+    """
     today = datetime.now().strftime("%Y-%m-%d")
     stats = STATS()
     try:
-        with open(log_filename, "r") as f:
+        with open(LOG_FILENAME, "r") as f:
             lines = f.readlines()
             for line in lines:
                 if "Checking latest apt" in line and today in line:
@@ -185,7 +253,7 @@ def get_status(stats):
                     stats.fetch_errors += 1
 
     except (FileNotFoundError, PermissionError) as e:
-        print(f"Error reading: {e}")
+        print(f"{RED_COLOR}Error reading: {e}{RESET_COLOR}")
     
     # get number of packages staged
     stats.num_archived = count_deb_packages(stats.archives_path)
@@ -194,24 +262,35 @@ def get_status(stats):
     return stats
 
 
-# write/create a log file 
 def db(*args):
+    """
+    Write log entries to the log file.
+
+    Parameters:
+    - args: Log entry components to be written to the log file.
+    """
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     try:
         # Try to open the file in append mode
-        with open(log_filename, "a") as f:
+        with open(LOG_FILENAME, "a") as f:
             print(f"[{timestamp}]", *args, file=f)
     except FileNotFoundError:
         # If the file does not exist, create it and append to it
-        with open(log_filename, "w") as f:
+        with open(LOG_FILENAME, "w") as f:
             print(f"[{timestamp}]", *args, file=f)
     except Exception as e:
-        print(f"Error accessing the file: {e}")
+        print(f"{RED_COLOR}Error accessing {LOG_FILENAME}: {e}{RESET_COLOR}")
 
 
-# remove apt-fetch lock file if found to be from an old run
 def remove_stale_lock(lock_file_path, threshold):
+    """
+    Remove a stale lock file if found.
+
+    Parameters:
+    - lock_file_path (str): The path to the lock file.
+    - threshold (int): The maximum age (in seconds) for a lock file to be considered stale.
+    """
     do_remove = False
     if os.path.exists(lock_file_path):
         db("Found a lock file")
@@ -222,8 +301,8 @@ def remove_stale_lock(lock_file_path, threshold):
 
         # Read PID from the lock file
         try:
-            with open(lock_file_path, "r") as lock_file:
-                pid = int(lock_file.read().strip())
+            with open(lock_file_path, "r") as LOCK_FILE:
+                pid = int(LOCK_FILE.read().strip())
         except (ValueError, FileNotFoundError):
             pid = None
 
@@ -247,17 +326,22 @@ def remove_stale_lock(lock_file_path, threshold):
 
 
 
-# run apt to fetch all updates and cache them in /var/cache/apt
 def fetch_updates(stats):
-    remove_stale_lock(lock_file, lock_file_max_age)
+    """
+    Fetch updates and cache them in /var/cache/apt/.
+
+    Parameters:
+    - stats (STATS): STATS object to update during the update process.
+    """
+    remove_stale_lock(LOCK_FILE, LOCK_FILE_MAX_AGE)
 
     # Write the current PID to the lock file
-    with open(lock_file, "w") as lock_file_handle:
+    with open(LOCK_FILE, "w") as lock_file_handle:
         lock_file_handle.write(str(os.getpid()))
 
     # Run apt-get update and apt-get dist-upgrade download only with rate limit
     db("Checking latest apt..")
-    with open(log_filename, "a") as log:
+    with open(LOG_FILENAME, "a") as log:
         subprocess.run(
             ["apt-get", "update"],
             stdout=log,
@@ -271,7 +355,7 @@ def fetch_updates(stats):
                 "-y",
                 "--quiet",
                 "--download-only",
-                f"-oAcquire::http::Dl-Limit={rate_limit}",
+                f"-oAcquire::http::Dl-Limit={RATE_LIMIT}",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -279,12 +363,15 @@ def fetch_updates(stats):
         )
 
     # Remove the lock file after completing the update and upgrade
-    os.remove(lock_file)
+    os.remove(LOCK_FILE)
     db("apt-fetch complete.")
 
-# check APT cache and remove packages which have already been installed by comparing the name and version in the .deb with the version installed
-# on the system - if it's installed at all.
+
 def manage_apt_cache(deb_packages):
+    """
+    Manage the Apt cache, including checking package information, installation status,
+    and cleaning up the cache based on command-line arguments.
+    """
     for pkg in deb_packages:
         print(f"Filename: {pkg.filename}")
         print(f"Version: {pkg.version}")
@@ -309,6 +396,13 @@ def manage_apt_cache(deb_packages):
             
 
 def main():
+    """
+    Fetch updates and display status based on command-line arguments.
+
+    -s, --status: Display general status.
+    -j, --json_status: Display status in JSON format.
+    -p, --pkg_info: Display information about installed packages.
+    """
     parser = argparse.ArgumentParser(description='Fetch updates and display status.')
     parser.add_argument('-s', '--status', action='store_true', help='Display status')
     parser.add_argument('-j', '--json_status', action='store_true', help='Display status as JSON')
@@ -327,7 +421,7 @@ def main():
         print (json.dumps(data, indent=2))
 
     elif args.status:
-        print (f"trying {log_filename}")
+        print (f"trying {LOG_FILENAME}")
         stats = get_status(stats)
         print(f"Number of runs today: {stats.num_runs}")
         print(f"Number of complete runs: {stats.num_complete}")
@@ -338,7 +432,7 @@ def main():
             print(f"Last run timestamp: {stats.last_run}")
     else:
         try:
-            handler = TimedRotatingFileHandler(log_filename, when='midnight', backupCount=6, interval=1, utc=True)
+            handler = TimedRotatingFileHandler(LOG_FILENAME, when='midnight', backupCount=6, interval=1, utc=True)
 
             # Add the formatter to the handler
             handler.setFormatter(formatter)
@@ -351,8 +445,5 @@ def main():
             print(f"{RED_COLOR}Error: {e}. Elevated permissions are required for log rotation.{RESET_COLOR}")
         
        
-
-
-
 if __name__ == "__main__":
     main()
