@@ -389,7 +389,7 @@ def manage_apt_cache(deb_packages, json_output=False):
             # Check if the package is installed
             result["Installed"] = get_installed(pkg)
 
-            # Try to clean up the cache
+            # Try to clean up the cache if the package/version is alread installed
             if result["Installed"]:
                 result["Cleanup"] = cleanup_cache(pkg)
             else:
@@ -423,17 +423,17 @@ def main():
 
     -s, --status: Display general status.
     -j, --json_status: Display status in JSON format.
-    -p, --pkg_info: Display information about installed packages.
+    -p, --pkg_cleanup: Cleanup cache directory, removing packages already installed.
     """
     parser = argparse.ArgumentParser(description='Fetch updates and display status.')
     parser.add_argument('-s', '--status', action='store_true', help='Display status')
     parser.add_argument('-j', '--json_status', action='store_true', help='Display status as JSON')
-    parser.add_argument('-p', '--pkg_info', action='store_true', help='Display information about installed packages')
+    parser.add_argument('-p', '--pkg_cleanup', action='store_true', help='Cleanup cache directory, removing packages already installed')
     
     stats = STATS()
     args = parser.parse_args()
     
-    if args.pkg_info:
+    if args.pkg_cleanup:
         deb_packages = get_pkgs()
         manage_apt_cache(deb_packages, json_output=args.json_status)
                 
