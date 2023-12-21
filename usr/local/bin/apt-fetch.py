@@ -21,6 +21,11 @@ from datetime import datetime, timedelta
 import argparse
 import logging
 from logging.handlers import TimedRotatingFileHandler
+import apt
+
+# ANSI escape codes for colors
+RED_COLOR = '\033[91m'
+RESET_COLOR = '\033[0m'
 
 lock_file           = "/var/lock/apt-fetch"
 rate_limit          = "56K"
@@ -36,7 +41,7 @@ formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 # Set up the TimedRotatingFileHandler
 log_filename = "/var/log/apt-fetch-{}.log".format(datetime.now().strftime("%A").lower())
 
-
+# info about apt-fetch execution
 class STATS:
     def __init__(self):
         self.num_runs = 0
@@ -56,7 +61,100 @@ class STATS:
         self.num_complete += 1
         self.last_run = timestamp
 
+# info about deb packages
+class DEB_PKG:
+    def __init__(self, filename, version, name):
+        self.filename = filename
+        self.version = version
+        self.name = name
+        
+# build list of packages in /var/cache/apt/archives and return it
+def get_pkgs():
+    deb_packages = []
+    archives_path = "/var/cache/apt/archives"
+    
+    try:
+        if os.path.exists(archives_path) and os.path.isdir(archives_path):
+            for root, dirs, files in os.walk(archives_path):
+                deb_files = [file for file in files if file.endswith(".deb")]
+                for deb_file in deb_files:
+                    deb_file_path = os.path.join(root, deb_file)
+                    package = get_package_info(deb_file_path)
+                    deb_packages.append(package)
+    except Exception as e:
+        print(f"{RED_COLOR}Error reading .DEB packages in {archives_path}: {e}{RESET_COLOR}")
+    
+    return deb_packages
+        
 
+# check if a given DEB_PKG object is installed on the system
+def get_installed(deb_package):
+    try:
+        # Run dpkg-query command to check if the package is installed
+        output = subprocess.check_output(["dpkg-query", "--show", deb_package.name], text=True, stderr=subprocess.STDOUT)
+
+        # Parse the version from the second column of the output
+        installed_version = output.split('\t')[1].strip() if output else None
+
+        # Check if the package is installed and has the correct version
+        if installed_version == deb_package.version:
+            return True
+        else:
+            return False
+
+    except subprocess.CalledProcessError as e:
+        # If the return status is 1, the package is not installed
+        if e.returncode == 1:
+            return False
+        else:
+            # If the return status is different, there might be another problem
+            print(f"Error checking installation status for {deb_package.name}: {e}")
+            return False
+    
+
+
+# remove packages which have already been installed
+def cleanup_cache(deb_package):
+    try:
+        # Remove the package file from /var/cache/apt/archives
+        package_file_path = os.path.join("/var/cache/apt/archives", deb_package.filename)
+        os.remove(package_file_path)
+
+        print(f"Package {deb_package.filename} removed from /var/cache/apt/archives.")
+        return True
+    except FileNotFoundError:
+        # Handle the case where the file is not found
+        print(f"{RED_COLOR}Error: Package file {deb_package.filename} not found in /var/cache/apt/archives.{RESET_COLOR}")
+        return False
+    except Exception as e:
+        # Handle other exceptions
+        print(f"{RED_COLOR}Error cleaning up cache for {deb_package.filename}: {e}{RESET_COLOR}")
+        return False
+    
+    
+
+# get info on packages in /var/cache/apt/archives
+def get_package_info(package_file_path):
+    package_name = os.path.basename(package_file_path)
+
+    try:
+        # Run dpkg --info command
+        dpkg_info_output = subprocess.check_output(["dpkg", "--info", package_file_path], text=True)
+
+        # Parse dpkg_info_output for Version and Package information
+        version_line = next(line for line in dpkg_info_output.split('\n') if line.startswith(' Version:'))
+        version = version_line.split(': ')[1].strip()
+
+        name_line = next(line for line in dpkg_info_output.split('\n') if line.startswith(' Package:'))
+        name = name_line.split(': ')[1].strip()
+
+        return DEB_PKG(filename=package_name, version=version, name=name)
+
+    except subprocess.CalledProcessError as e:
+        print(f"{RED_COLOR}Error running dpkg --info for {package_file_path}: {e}{RESET_COLOR}")
+        return DEB_PKG(filename=package_name, version="Not available", name="Not available")
+
+  
 # get the number of packages waiting to be applied        
 def count_deb_packages(directory_path):
     deb_count = 0
@@ -147,6 +245,8 @@ def remove_stale_lock(lock_file_path, threshold):
             db(f"Stale lock file found for PID {pid}. Removing.")
             os.remove(lock_file_path)
 
+
+
 # run apt to fetch all updates and cache them in /var/cache/apt
 def fetch_updates(stats):
     remove_stale_lock(lock_file, lock_file_max_age)
@@ -182,15 +282,46 @@ def fetch_updates(stats):
     os.remove(lock_file)
     db("apt-fetch complete.")
 
+# check APT cache and remove packages which have already been installed by comparing the name and version in the .deb with the version installed
+# on the system - if it's installed at all.
+def manage_apt_cache(deb_packages):
+    for pkg in deb_packages:
+        print(f"Filename: {pkg.filename}")
+        print(f"Version: {pkg.version}")
+        print(f"Name: {pkg.name}")
+
+        try:
+            # Check if the package is installed
+            if get_installed(pkg):
+                print("Installed: Yes")
+
+                # Try to clean up the cache
+                if cleanup_cache(pkg):
+                    print("Cleanup succeeded")
+                else:
+                    print(f"{RED_COLOR}Cleanup failed{RESET_COLOR}")
+            else:
+                print("Installed: No")
+
+        except Exception as e:
+            print(f"{RED_COLOR}Error: {e}{RESET_COLOR}")
+            
+            
 
 def main():
     parser = argparse.ArgumentParser(description='Fetch updates and display status.')
     parser.add_argument('-s', '--status', action='store_true', help='Display status')
     parser.add_argument('-j', '--json_status', action='store_true', help='Display status as JSON')
+    parser.add_argument('-p', '--pkg_info', action='store_true', help='Display information about installed packages')
+    
     stats = STATS()
     args = parser.parse_args()
-
-    if args.json_status:
+    
+    if args.pkg_info:
+        deb_packages = get_pkgs()
+        manage_apt_cache(deb_packages)
+                
+    elif args.json_status:
         stats = get_status(stats)
         data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "fetch_errors" : stats.fetch_errors}
         print (json.dumps(data, indent=2))
@@ -206,15 +337,20 @@ def main():
         if stats.last_run:
             print(f"Last run timestamp: {stats.last_run}")
     else:
-        handler = TimedRotatingFileHandler(log_filename, when='midnight', backupCount=6, interval=1, utc=True)
+        try:
+            handler = TimedRotatingFileHandler(log_filename, when='midnight', backupCount=6, interval=1, utc=True)
 
-        # Add the formatter to the handler
-        handler.setFormatter(formatter)
+            # Add the formatter to the handler
+            handler.setFormatter(formatter)
 
-        # Add the handler to the logger
-        logger.addHandler(handler)
+            # Add the handler to the logger
+            logger.addHandler(handler)
 
-        fetch_updates(stats)
+            fetch_updates(stats)
+        except PermissionError as e:
+            print(f"{RED_COLOR}Error: {e}. Elevated permissions are required for log rotation.{RESET_COLOR}")
+        
+       
 
 
 
