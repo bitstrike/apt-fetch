@@ -16,15 +16,16 @@
 
 import json
 import os
+import sys
 import subprocess
 from datetime import datetime, timedelta
 import argparse
 import logging
-from logging.handlers import TimedRotatingFileHandler
 import apt
 
 # ANSI escape codes for colors
 RED_COLOR = '\033[91m'
+YELLOW_COLOR = '\033[93m'
 RESET_COLOR = '\033[0m'
 
 ARCHIVES_PATH       = "/var/cache/apt/archives"
@@ -39,7 +40,7 @@ logger.setLevel(logging.INFO)
 # Set up the formatter
 formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-# Set up the TimedRotatingFileHandler
+# Set up the RotatingFileHandler
 LOG_FILENAME = "/var/log/apt-fetch-{}.log".format(datetime.now().strftime("%A").lower())
 
 class STATS:
@@ -89,6 +90,52 @@ class DEB_PKG:
         self.name = name
         self.installed = installed
         
+def create_log_if_not_exists():
+    """
+    Check if the log file exists and the user has write access.
+    If the file does not exist, create it; if the user lacks write access, print an error and return False.
+
+    This function is responsible for ensuring that the log file exists and the user has the necessary
+    permissions before attempting to open it in append mode. It performs checks to determine whether
+    the user has write access to the log file. If the file does not exist, it is created and appended to.
+    If the user does not have write access, an error message is printed, and the function returns False
+    without attempting any write operations. Returns True if the log file is created or already exists.
+    """
+    try:        
+        
+        # Check if the file exists
+        if not os.path.exists(LOG_FILENAME):
+            print(f"{YELLOW_COLOR}Log file {LOG_FILENAME} does not exist.{RESET_COLOR}")
+
+        # Check if the '-s' flag was specified on the command line
+        if '-s' in sys.argv or '--status' in sys.argv:
+            return True
+
+        # Check if the file exists and the user has write access
+        elif os.path.exists(LOG_FILENAME) and not os.access(LOG_FILENAME, os.W_OK):
+            return False
+
+        # Try to open the file in append mode
+        with open(LOG_FILENAME, "a") as f:
+            pass
+
+        # Return True indicating successful creation or existence of the log file
+        return True
+
+    except FileNotFoundError:
+        # If the file does not exist, create it and append to it
+        try:
+            with open(LOG_FILENAME, "w") as f:
+                print("Log file created.", file=f)
+        except Exception as e:
+            # Print an error message if creating the file fails
+            print(f"{RED_COLOR}Error creating {LOG_FILENAME}: {e}{RESET_COLOR}")
+            return False
+
+    except Exception as e:
+        # Print a generic error message for any other exceptions
+        print(f"{RED_COLOR}Error accessing {LOG_FILENAME}: {e}{RESET_COLOR}")
+        return False
 
 def get_pkgs():
     """
@@ -162,16 +209,19 @@ def cleanup_cache(deb_package):
         # Remove the package file from /var/cache/apt/archives
         package_file_path = os.path.join("/var/cache/apt/archives", deb_package.filename)
         os.remove(package_file_path)
+        db(f"Removed cache: {deb_package}")
 
         print(f"Package {deb_package.filename} removed from /var/cache/apt/archives.")
         return True
     except FileNotFoundError:
         # Handle the case where the file is not found
         print(f"{RED_COLOR}Error: Package file {deb_package.filename} not found in /var/cache/apt/archives.{RESET_COLOR}")
+        db(f"Error: {deb_package} was not found in cache")
         return False
     except Exception as e:
         # Handle other exceptions
         print(f"{RED_COLOR}Error cleaning up cache for {deb_package.filename}: {e}{RESET_COLOR}")
+        db(f"Error removing {deb_package} from cache: {e}")
         return False
     
     
@@ -242,7 +292,9 @@ def get_status(stats):
     """
     today = datetime.now().strftime("%Y-%m-%d")
     stats = STATS()
-    try:
+    try:        
+        result = create_log_if_not_exists()  # Ensure log file exists
+
         with open(LOG_FILENAME, "r") as f:
             lines = f.readlines()
             for line in lines:
@@ -270,8 +322,18 @@ def db(*args):
 
     Parameters:
     - args: Log entry components to be written to the log file.
-    """
+    """    
+    
+    # alert if no write acces
+    if not os.access(LOG_FILENAME, os.W_OK):
+        print(f"{RED_COLOR}Error: No write access to {LOG_FILENAME}.{RESET_COLOR}")
+
+    if not os.path.exists(LOG_FILENAME):
+        print(f"{RED_COLOR}Error: No log file to parse {LOG_FILENAME}.{RESET_COLOR}")
+
+    
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
 
     try:
         # Try to open the file in append mode
@@ -432,14 +494,21 @@ def main():
     
     stats = STATS()
     args = parser.parse_args()
-    
+
+    log_writeable = True
+    log_exists = True
+    if not os.access(LOG_FILENAME, os.W_OK):
+        log_writeable = False
+    if not os.path.exists(LOG_FILENAME):
+        log_exists = False
+
     if args.pkg_cleanup:
         deb_packages = get_pkgs()
         manage_apt_cache(deb_packages, json_output=args.json_status)
                 
     elif args.json_status:
         stats = get_status(stats)
-        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "fetch_errors" : stats.fetch_errors}
+        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "fetch_errors" : stats.fetch_errors, "logfile_exists" : log_exists, "logfile_writeable" : log_writeable, "blah" : "true"}
         print (json.dumps(data, indent=2))
 
     elif args.status:
@@ -448,20 +517,20 @@ def main():
         print(f"Number of runs today: {stats.num_runs}")
         print(f"Number of complete runs: {stats.num_complete}")
         print(f"Number of Errors encountered: {stats.fetch_errors}")
+        
+        # alert if no write acces
+        if not os.access(LOG_FILENAME, os.W_OK):
+            print(f"Write access to {LOG_FILENAME}: unable to write, but need  read for -s. check permissions.")
+
+        if not os.path.exists(LOG_FILENAME):
+            print(f"Logfile exists: {LOG_FILENAME} is missing")
+
         print(f"{stats.num_archived} archived .deb packages queued and {stats.num_partial} partially downloaded")
 
         if stats.last_run:
             print(f"Last run timestamp: {stats.last_run}")
     else:
         try:
-            handler = TimedRotatingFileHandler(LOG_FILENAME, when='midnight', backupCount=6, interval=1, utc=True)
-
-            # Add the formatter to the handler
-            handler.setFormatter(formatter)
-
-            # Add the handler to the logger
-            logger.addHandler(handler)
-
             fetch_updates(stats)
         except PermissionError as e:
             print(f"{RED_COLOR}Error: {e}. Elevated permissions are required for log rotation.{RESET_COLOR}")
@@ -469,3 +538,4 @@ def main():
        
 if __name__ == "__main__":
     main()
+
