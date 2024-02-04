@@ -26,7 +26,7 @@ const Mainloop  = imports.mainloop;
 const Lang      = imports.lang;
 const Settings = imports.ui.settings;
 
-let LastRun = "none";
+let LastRun = '{"last_run": "none"}';
 let lastNotificationTime = 0;
 const OneHourInSeconds = 60 * 60
 const OneDayInSeconds = 24 * OneHourInSeconds;
@@ -175,16 +175,29 @@ class AptFetchApplet extends Applet.IconApplet {
 
     // use Zenity to show the runtime stats for apt-fetch
     _onStatusClick() {
-        var parsedData = JSON.parse(LastRun);
-        if (parsedData.last_run.toLowerCase() === "pending") 
-        {
-            Util.spawnCommandLine(`zenity --info --text="No status avaialable yet, apt-fetch is pending."`);
+        try {
+            db(`Launching zenity dialog: LastRun ${JSON.stringify(LastRun, null, 2)}`);
+            
+            // Attempt to parse LastRun
+            var parsedData = JSON.parse(LastRun);
+
+            // Log the parsed data
+            db(`Parsed Data: ${JSON.stringify(parsedData, null, 2)}`);
+            db(`logfile_writeable: ${parsedData.logfile_writeable}`);
+            
+            // Check if parsedData.last_run exists before accessing its properties
+            if (parsedData && parsedData.last_run && parsedData.last_run.toLowerCase() === "pending") {
+                Util.spawnCommandLine(`zenity --info --text="No status available yet, apt-fetch is pending."`);
+            } else {
+                Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.fetch_errors} errors were encountered.\n${parsedData.num_archived} packages are awaiting installation. \napt-fetch logfile exists:${parsedData.logfile_exists}\napt-fetch logfile is writeable: ${parsedData.logfile_writeable}.\n"`);
+            }
+        } catch (error) {
+            // Handle parsing error
+            db(`Error during _onStatusClick: ${error}`);
+            // Optionally, you can display an error message using Zenity or another method.
         }
-        else
-            Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.fetch_errors} errors were encountered.\n${parsedData.num_archived} packages are awaiting installation."`);
-
-
     }
+
     
     // Check the existence of /var/lock/apt-fetch which signals that apt-fetch.py is currently running
     _stateCheck() {
