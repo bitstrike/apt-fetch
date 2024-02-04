@@ -1,4 +1,4 @@
 # don't run this too often or you may get dropped by the mirrors
 */30 * * * * root /usr/local/bin/apt-fetch.py
 # cleanup cache for packages which have been installed
-0 */12 * * * root /usr/local/bin/apt-fetch -p
+0 */12 * * * root /usr/local/bin/apt-fetch.py -p
