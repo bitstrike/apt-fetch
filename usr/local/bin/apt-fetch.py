@@ -89,7 +89,37 @@ class DEB_PKG:
         self.version = version
         self.name = name
         self.installed = installed
-        
+
+
+def rotate_log_today():
+    """
+    Rotate the log file by removing previous entries for the current day or starting a new log.
+    """
+    today_datestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    new_log_entry = f"[{today_datestamp}] New log\n"
+    
+    try:
+        # Check if the log file exists and is readable
+        if os.path.exists(LOG_FILENAME) and os.access(LOG_FILENAME, os.R_OK):
+
+            # Open the log file for reading and writing
+            with open(LOG_FILENAME, "r+") as log_file:
+                log_content = log_file.read()
+
+                # Check if today's datestamp exists in the log content
+                if today_datestamp not in log_content:
+                    log_file.truncate()
+                    
+                    # If today's datestamp doesn't exist, open the log file to clear its contents
+                    with open(LOG_FILENAME, "w") as log_file:
+                        log_file.write(new_log_entry)
+        else:
+            # If the log file doesn't exist or is not readable, print an error message
+            print(f"Error: Log file '{LOG_FILENAME}' is not accessible.")
+    except Exception as e:
+        print(f"Error rotating log file: {e}")
+
+
 def create_log_if_not_exists():
     """
     Check if the log file exists and the user has write access.
@@ -323,7 +353,7 @@ def db(*args):
     Parameters:
     - args: Log entry components to be written to the log file.
     """    
-    
+    print (f"db: " , *args)
     # alert if no write acces
     if not os.access(LOG_FILENAME, os.W_OK):
         print(f"{RED_COLOR}Error: No write access to {LOG_FILENAME}.{RESET_COLOR}")
@@ -494,6 +524,7 @@ def main():
     
     stats = STATS()
     args = parser.parse_args()
+    rotate_log_today()
 
     log_writeable = True
     log_exists = True
