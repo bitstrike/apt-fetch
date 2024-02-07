@@ -434,7 +434,6 @@ def fetch_updates(stats):
         lock_file_handle.write(str(os.getpid()))
 
     # Run apt-get update and apt-get dist-upgrade download only with rate limit
-    db("Checking latest apt..")
     with open(LOG_FILENAME, "a") as log:
         subprocess.run(
             ["apt-get", "update"],
@@ -458,7 +457,7 @@ def fetch_updates(stats):
 
     # Remove the lock file after completing the update and upgrade
     os.remove(LOCK_FILE)
-    db("apt-fetch complete.")
+    #db("apt-fetch complete.")
 
 
             
