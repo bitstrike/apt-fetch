@@ -33,6 +33,10 @@ LOCK_FILE           = "/var/lock/apt-fetch"
 RATE_LIMIT          = "56K"
 LOCK_FILE_MAX_AGE   = 86400  # in seconds
 
+LOG_STR_APT_CHECK   = "Checking latest packages via apt..."
+LOG_STR_APT_COMPLETE = "apt check complete"
+LOG_STR_APT_FAILED   = "apt check Failed. maybe another apt process is running, or stale lock file"
+
 # Set up the logger
 logger = logging.getLogger('daily_logger')
 logger.setLevel(logging.INFO)
@@ -95,12 +99,12 @@ def rotate_log_today():
     """
     Rotate the log file by removing previous entries for the current day or starting a new log.
     """
-    today_datestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    today_datestamp = datetime.now().strftime("%Y-%m-%d")
     new_log_entry = f"[{today_datestamp}] New log\n"
     
     try:
         # Check if the log file exists and is readable
-        if os.path.exists(LOG_FILENAME) and os.access(LOG_FILENAME, os.R_OK):
+        if os.path.exists(LOG_FILENAME) and os.access(LOG_FILENAME, os.R_OK|os.W_OK):
 
             # Open the log file for reading and writing
             with open(LOG_FILENAME, "r+") as log_file:
@@ -109,63 +113,16 @@ def rotate_log_today():
                 # Check if today's datestamp exists in the log content
                 if today_datestamp not in log_content:
                     log_file.truncate()
-                    
-                    # If today's datestamp doesn't exist, open the log file to clear its contents
-                    with open(LOG_FILENAME, "w") as log_file:
-                        log_file.write(new_log_entry)
+            
+            # If today's datestamp doesn't exist, open the log file to clear its contents
+            with open(LOG_FILENAME, "a+") as log_file:
+                log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]\n")
         else:
             # If the log file doesn't exist or is not readable, print an error message
             print(f"Error: Log file '{LOG_FILENAME}' is not accessible.")
     except Exception as e:
         print(f"Error rotating log file: {e}")
 
-
-def create_log_if_not_exists():
-    """
-    Check if the log file exists and the user has write access.
-    If the file does not exist, create it; if the user lacks write access, print an error and return False.
-
-    This function is responsible for ensuring that the log file exists and the user has the necessary
-    permissions before attempting to open it in append mode. It performs checks to determine whether
-    the user has write access to the log file. If the file does not exist, it is created and appended to.
-    If the user does not have write access, an error message is printed, and the function returns False
-    without attempting any write operations. Returns True if the log file is created or already exists.
-    """
-    try:        
-        
-        # Check if the file exists
-        if not os.path.exists(LOG_FILENAME):
-            print(f"{YELLOW_COLOR}Log file {LOG_FILENAME} does not exist.{RESET_COLOR}")
-
-        # Check if the '-s' flag was specified on the command line
-        if '-s' in sys.argv or '--status' in sys.argv:
-            return True
-
-        # Check if the file exists and the user has write access
-        elif os.path.exists(LOG_FILENAME) and not os.access(LOG_FILENAME, os.W_OK):
-            return False
-
-        # Try to open the file in append mode
-        with open(LOG_FILENAME, "a") as f:
-            pass
-
-        # Return True indicating successful creation or existence of the log file
-        return True
-
-    except FileNotFoundError:
-        # If the file does not exist, create it and append to it
-        try:
-            with open(LOG_FILENAME, "w") as f:
-                print("Log file created.", file=f)
-        except Exception as e:
-            # Print an error message if creating the file fails
-            print(f"{RED_COLOR}Error creating {LOG_FILENAME}: {e}{RESET_COLOR}")
-            return False
-
-    except Exception as e:
-        # Print a generic error message for any other exceptions
-        print(f"{RED_COLOR}Error accessing {LOG_FILENAME}: {e}{RESET_COLOR}")
-        return False
 
 def get_pkgs():
     """
@@ -323,17 +280,15 @@ def get_status(stats):
     today = datetime.now().strftime("%Y-%m-%d")
     stats = STATS()
     try:        
-        result = create_log_if_not_exists()  # Ensure log file exists
-
         with open(LOG_FILENAME, "r") as f:
             lines = f.readlines()
             for line in lines:
-                if "Checking latest apt" in line and today in line:
+                if LOG_STR_APT_CHECK in line and today in line:
                     stats.update (line.split("]")[0][1:])
-                if "apt-fetch complete" in line and today in line:
+                if LOG_STR_APT_COMPLETE in line and today in line:
                     stats.update_complete(line.split("]")[0][1:])
                     stats.last_run = line.split("]")[0][1:]
-                if "Failed" in line:
+                if LOG_STR_APT_FAILED in line:
                     stats.fetch_errors += 1
 
     except (FileNotFoundError, PermissionError) as e:
@@ -353,7 +308,7 @@ def db(*args):
     Parameters:
     - args: Log entry components to be written to the log file.
     """    
-    print (f"db: " , *args)
+    #print (f"db: " , *args)
     # alert if no write acces
     if not os.access(LOG_FILENAME, os.W_OK):
         print(f"{RED_COLOR}Error: No write access to {LOG_FILENAME}.{RESET_COLOR}")
@@ -433,31 +388,39 @@ def fetch_updates(stats):
     with open(LOCK_FILE, "w") as lock_file_handle:
         lock_file_handle.write(str(os.getpid()))
 
-    # Run apt-get update and apt-get dist-upgrade download only with rate limit
-    with open(LOG_FILENAME, "a") as log:
-        subprocess.run(
-            ["apt-get", "update"],
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=True,
-        )
-        subprocess.run(
-            [
-                "apt-get",
-                "dist-upgrade",
-                "-y",
-                "--quiet",
-                "--download-only",
-                f"-oAcquire::http::Dl-Limit={RATE_LIMIT}",
-            ],
-            stdout=log,
-            stderr=subprocess.STDOUT,
-            check=True,
-        )
+    db (LOG_STR_APT_CHECK)
 
-    # Remove the lock file after completing the update and upgrade
-    os.remove(LOCK_FILE)
-    #db("apt-fetch complete.")
+    try:
+        # Run apt-get update and apt-get dist-upgrade download only with rate limit
+        with open(LOG_FILENAME, "a") as log:
+            subprocess.run(
+                ["apt-get", "update"],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=True,
+            )
+            subprocess.run(
+                [
+                    "apt-get",
+                    "dist-upgrade",
+                    "-y",
+                    "--quiet",
+                    "--download-only",
+                    f"-oAcquire::http::Dl-Limit={RATE_LIMIT}",
+                ],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                check=True,
+            )
+
+    except subprocess.CalledProcessError as e:
+        # Handle errors raised by apt-get commands
+        print(f"Error running apt-get command: {e}")
+
+    finally:
+        # Remove the lock file after completing the update and upgrade
+        os.remove(LOCK_FILE)
+        db (LOG_STR_APT_COMPLETE)
 
 
             
