@@ -187,26 +187,45 @@ class AptFetchApplet extends Applet.IconApplet {
 
     // use Zenity to show the runtime stats for apt-fetch
     _onStatusClick() {
-        try {
+        try 
+        {
             db(`Launching zenity dialog: LastRun ${JSON.stringify(LastRun, null, 2)}`);
             
-            // Attempt to parse LastRun
-            var parsedData = JSON.parse(LastRun);
+            // Separate the error message, if there is one, and JSON data
+            let errorMessage = '';
+            let jsonData = null;
+            const errorIndex = LastRun.indexOf('{');
 
-            // Log the parsed data
-            db(`Parsed Data: ${JSON.stringify(parsedData, null, 2)}`);
-            db(`logfile_writeable: ${parsedData.logfile_writeable}`);
-            
-            // Check if parsedData.last_run exists before accessing its properties
-            if (parsedData && parsedData.last_run && parsedData.last_run.toLowerCase() === "pending") {
-                Util.spawnCommandLine(`zenity --info --text="No status available yet, apt-fetch is pending."`);
-            } else {
-                Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${parsedData.last_run}\n${parsedData.runs_today} fetches have been done today\n${parsedData.runs_complete} fetches have completed.\n${parsedData.fetch_errors} errors were encountered.\n${parsedData.num_archived} packages are awaiting installation. \napt-fetch logfile exists:${parsedData.logfile_exists}\napt-fetch logfile is writeable: ${parsedData.logfile_writeable}.\n"`);
+            if (errorIndex !== -1) 
+            {
+                errorMessage = LastRun.substring(0, errorIndex).trim();
+                jsonData = JSON.parse(LastRun.substring(errorIndex));
+            } 
+            else 
+            {
+                jsonData = JSON.parse(LastRun);
             }
-        } catch (error) {
+    
+            // Log the parsed data
+            db(`Error Message: ${errorMessage}`);
+            db(`Parsed Data: ${JSON.stringify(jsonData, null, 2)}`);
+            db(`logfile_writeable: ${jsonData.logfile_writeable}`);
+            
+            // Check if jsonData.last_run exists before accessing its properties
+            if (jsonData && jsonData.last_run && jsonData.last_run.toLowerCase() === "pending") 
+            {
+                Util.spawnCommandLine(`zenity --info --text="No status available yet, apt-fetch is pending."`);
+            } 
+            else 
+            {
+                Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${jsonData.last_run}\n${jsonData.runs_today} fetches have been done today\n${jsonData.runs_complete} fetches have completed.\n${jsonData.fetch_errors} errors were encountered.\n${jsonData.num_archived} packages are awaiting installation. \napt-fetch logfile exists:${jsonData.logfile_exists}\napt-fetch logfile is writeable: ${jsonData.logfile_writeable}.\n"`);
+            }
+        } 
+        catch (error) 
+        {
             // Handle parsing error
             db(`Error during _onStatusClick: ${error}`);
-            this._showNotification ("(apt-fetch) Zenity error", "The apt-fetch applet was not able to run the zenity command to display the status.\nMore info may be available in /var/log or by running apt-fetch.py -s\n")
+            this._showNotification("(apt-fetch) Zenity error", "The apt-fetch applet was not able to run the zenity command to display the status.\nMore info may be available in /var/log or by running apt-fetch.py -s\n");
             // Optionally, you can display an error message using Zenity or another method.
         }
     }
