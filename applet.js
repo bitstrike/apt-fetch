@@ -125,29 +125,41 @@ class AptFetchApplet extends Applet.IconApplet {
     {
         // Check if a day has passed since the last notification
         const currentTime = Math.floor(Date.now() / 1000); // current time in seconds
-        const parsedData = JSON.parse(LastRun);
 
-        // if updates have been downloaded and desktop has just been logged into
-        if (parsedData.num_archived > 0)
-        {
-            if (lastNotificationTime == 0)
-            {
-                lastNotificationTime = currentTime;
-                return true;
-            }
-        }
-
-        // if time since last notification has expired, and updates are available, notify again
-        if (currentTime - lastNotificationTime >= NotifcationInterval) 
-        {
-            // don't notify if nothing to update
+        try {
+            // Attempt to parse LastRun
+            var parsedData = JSON.parse(LastRun);
+            
+            // Handle parsed data
+            // ...
+            // if updates have been downloaded and desktop has just been logged into
             if (parsedData.num_archived > 0)
             {
-                // Update the last notification time
-                db ("_checkNotificationTimeout:parseddata is > 0");
-                lastNotificationTime = currentTime;
-                return true
+                if (lastNotificationTime == 0)
+                {
+                    lastNotificationTime = currentTime;
+                    return true;
+                }
             }
+
+            // if time since last notification has expired, and updates are available, notify again
+            if (currentTime - lastNotificationTime >= NotifcationInterval) 
+            {
+                // don't notify if nothing to update
+                if (parsedData.num_archived > 0)
+                {
+                    // Update the last notification time
+                    db ("_checkNotificationTimeout:parseddata is > 0");
+                    lastNotificationTime = currentTime;
+                    return true
+                }
+            }            
+        }
+        catch (error) {
+            // Handle parsing error
+            console.error("Error parsing LastRun:", error);
+            console.log("LastRun JSON data:", JSON.stringify(JSON.parse(LastRun), null, 2));
+            this._showNotification ("(apt-fetch) JSON error", "The apt-fetch.py command produced unexpected output. This is likely due to an error message related to a system issue.\nCheck /var/log/ for more info.\n")
         }
 
         return false
@@ -194,6 +206,7 @@ class AptFetchApplet extends Applet.IconApplet {
         } catch (error) {
             // Handle parsing error
             db(`Error during _onStatusClick: ${error}`);
+            this._showNotification ("(apt-fetch) Zenity error", "The apt-fetch applet was not able to run the zenity command to display the status.\nMore info may be available in /var/log or by running apt-fetch.py -s\n")
             // Optionally, you can display an error message using Zenity or another method.
         }
     }
