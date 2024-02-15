@@ -69,9 +69,9 @@ class AptFetchApplet extends Applet.IconApplet {
         this.menu.addMenuItem(this.notification_toggle);
   
         // update manager item
-        this._onMintUpdateClick = this._onMintUpdateClick.bind(this);
+        this._onUpdateMgrClick = this._onUpdateMgrClick.bind(this);
         this.menuItem = new PopupMenu.PopupMenuItem("Update Manager");
-        this.menuItem.connect('activate', this._onMintUpdateClick);
+        this.menuItem.connect('activate', this._onUpdateMgrClick);
         this.menu.addMenuItem(this.menuItem);
 
         // seed LastRun with something usable and call apt-fetch
@@ -244,13 +244,61 @@ class AptFetchApplet extends Applet.IconApplet {
         }
 
     }
-   
-    // launch the mint update tool
-    _onMintUpdateClick() {
-        // item clicked
-        Util.spawnCommandLine("mintupdate");
+
+    /**
+     * Checks if the passed command exists on the system.
+     * @param {string} command The command to check.
+     * @returns {boolean} True if the command exists, false otherwise.
+     */
+    _findCommand(command) {
+        const Util = imports.misc.util;
+        const GLib = imports.gi.GLib;
+        return new Promise((resolve, reject) => {
+            Util.spawnCommandLineAsyncIO('which ' + command, (stdout, stderr) => {
+                if (stdout.trim() === "") {
+                    // Command does not exist
+                    db("Command '" + command + "' not found on the system.");
+                    resolve(false);
+                } else {
+                    // Command exists
+                    db("Command '" + command + "' found at path: " + stdout.trim());
+                    resolve(true);
+                }
+            });
+        });
     }
 
+    _onUpdateMgrClick() {
+        const commands = ["mintupdate", "synaptic"];
+        let foundCommand = null;
+    
+        // Loop over the list of commands
+        for (let i = 0; i < commands.length; i++) {
+            const command = commands[i];
+            if (this._findCommand(command)) {
+                foundCommand = command;
+                break; // Exit the loop once a command is found
+            }
+        }
+    
+        if (foundCommand === null) {
+            db("No supported update manager commands found on the system.");
+            return;
+        }
+    
+        db("Found supported update manager command: " + foundCommand);
+    
+        // Spawn the found command
+        Util.spawnCommandLineAsyncIO(foundCommand, (stdout, stderr) => {
+            if (stderr) {
+                db(foundCommand + " utility encountered an error: " + stderr);
+            } else {
+                db(foundCommand + " utility executed successfully.");
+            }
+        });
+    }
+
+ 
 
     // make applet menu visible
     on_applet_clicked(event) {
