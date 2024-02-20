@@ -100,7 +100,7 @@ def rotate_log_today():
     Rotate the log file by removing previous entries for the current day or starting a new log.
     """
     today_datestamp = datetime.now().strftime("%Y-%m-%d")
-    new_log_entry = f"[{today_datestamp}] New log\n"
+    new_log_entry = f"[{today_datestamp}] {LOG_STR_APT_CHECK}\n"
     
     try:
         # Check if the log file exists and is readable
@@ -114,9 +114,6 @@ def rotate_log_today():
                 if today_datestamp not in log_content:
                     log_file.truncate()
             
-            # If today's datestamp doesn't exist, open the log file to clear its contents
-            with open(LOG_FILENAME, "a+") as log_file:
-                log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]\n")
         else:
             # If the log file doesn't exist or is not readable, print an error message
             print(f"Error: Log file '{LOG_FILENAME}' is not accessible.")
