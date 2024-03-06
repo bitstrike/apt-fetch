@@ -58,6 +58,7 @@ class STATS:
     - packages_queued (int): Number of packages in the queue.
     - archives_path (str): Path to the APT archives.
     - num_archived (int): Number of archived packages.
+    - num_installed (int): Number of archived packages already installed.
     - num_partial (int): Number of partially downloaded packages.
     - fetch_errors (int): Number of fetch errors.
     """
@@ -68,6 +69,7 @@ class STATS:
         self.packages_queued = 0
         self.archives_path = ARCHIVES_PATH
         self.num_archived = 0
+        self.num_installed = 0
         self.num_partial = 0
         self.fetch_errors = 0
 
@@ -100,7 +102,7 @@ def rotate_log_today():
     Rotate the log file by removing previous entries for the current day or starting a new log.
     """
     today_datestamp = datetime.now().strftime("%Y-%m-%d")
-    new_log_entry = f"[{today_datestamp}] {LOG_STR_APT_CHECK}\n"
+    new_log_entry = f"[{today_datestamp}] New log\n"
     
     try:
         # Check if the log file exists and is readable
@@ -114,6 +116,9 @@ def rotate_log_today():
                 if today_datestamp not in log_content:
                     log_file.truncate()
             
+            # If today's datestamp doesn't exist, open the log file to clear its contents
+            with open(LOG_FILENAME, "a+") as log_file:
+                log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]\n")
         else:
             # If the log file doesn't exist or is not readable, print an error message
             print(f"Error: Log file '{LOG_FILENAME}' is not accessible.")
@@ -245,23 +250,29 @@ def get_package_info(package_file_path):
   
 def count_deb_packages(directory_path):
     """
-    Count the number of Debian package files in a specified directory.
+    Count the number of Debian package files in a specified directory and determine how many are installed.
 
     Parameters:
     - directory_path (str): The path to the directory containing Debian packages.
 
     Returns:
-    - int: The number of Debian package files.
+    - Tuple[int, int]: A tuple containing the number of Debian package files and the number of installed packages.
     """
     deb_count = 0
+    install_count = 0
     try:
         if os.path.exists(directory_path) and os.path.isdir(directory_path):
             for root, dirs, files in os.walk(directory_path):
-                deb_count += len([file for file in files if file.endswith(".deb")])
+                for file in files:
+                    if file.endswith(".deb"):
+                        deb_count += 1
+                        deb_path = os.path.join(root, file)
+                        if get_installed(DEB_PKG(filename=file, version="", name="", installed=False)):
+                            install_count += 1
     except Exception as e:
-        print(f"{RED_COLOR}Error counting .deb packages in {directory_path}: {e}{RESET_COLOR}")
-    
-    return deb_count
+        print(f"Error counting .deb packages in {directory_path}: {e}")
+
+    return deb_count, install_count
 
 
 def get_status(stats):
@@ -292,7 +303,7 @@ def get_status(stats):
         print(f"{RED_COLOR}Error reading: {e}{RESET_COLOR}")
     
     # get number of packages staged
-    stats.num_archived = count_deb_packages(stats.archives_path)
+    stats.num_archived, stats.num_installed = count_deb_packages(stats.archives_path)
     # needs root - stats.num_partial = count_deb_packages(stats.partial_path)
 
     return stats
@@ -498,7 +509,7 @@ def main():
                 
     elif args.json_status:
         stats = get_status(stats)
-        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "fetch_errors" : stats.fetch_errors, "logfile_exists" : log_exists, "logfile_writeable" : log_writeable, "blah" : "true"}
+        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "num_installed" : stats.num_installed, "fetch_errors" : stats.fetch_errors, "logfile_exists" : log_exists, "logfile_writeable" : log_writeable, "blah" : "true"}
         print (json.dumps(data, indent=2))
 
     elif args.status:

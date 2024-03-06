@@ -218,7 +218,7 @@ class AptFetchApplet extends Applet.IconApplet {
             } 
             else 
             {
-                Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${jsonData.last_run}\n${jsonData.runs_today} fetches have been done today\n${jsonData.runs_complete} fetches have completed.\n${jsonData.fetch_errors} errors were encountered.\n${jsonData.num_archived} packages are awaiting installation. \napt-fetch logfile exists:${jsonData.logfile_exists}\napt-fetch logfile is writeable: ${jsonData.logfile_writeable}.\n"`);
+                Util.spawnCommandLine(`zenity --info --text="apt-fetch was last run at ${jsonData.last_run}\n${jsonData.runs_today} fetches have been done today\n${jsonData.runs_complete} fetches have completed.\n${jsonData.fetch_errors} errors were encountered.\n${jsonData.num_archived} packages archived.\n${jsonData.num_installed} archived packages have been installed.\napt-fetch logfile exists:${jsonData.logfile_exists}\napt-fetch logfile is writeable: ${jsonData.logfile_writeable}.\n"`);
             }
         } 
         catch (error) 
@@ -268,36 +268,46 @@ class AptFetchApplet extends Applet.IconApplet {
         });
     }
 
-    _onUpdateMgrClick() {
-        const commands = ["mintupdate", "synaptic"];
-        let foundCommand = null;
-    
-        // Loop over the list of commands
-        for (let i = 0; i < commands.length; i++) {
-            const command = commands[i];
-            if (this._findCommand(command)) {
-                foundCommand = command;
-                break; // Exit the loop once a command is found
-            }
+   _onUpdateMgrClick() {
+    const commands = ["mintupdate", "synaptic"];
+    let foundCommand = null;
+    db("num commands: " + commands.length);
+
+    // Loop over the list of commands
+    for (let i = 0; i < commands.length; i++) {
+        const command = commands[i];
+        this._findCommand(command)
+            .then(val => {
+                db("command " + command + " retval " + val);
+                if (val !== false) {
+                    foundCommand = command;
+                    db("breaking loop with command " + command);
+                    // Spawn the found command
+                    Util.spawnCommandLineAsyncIO("pkexec " + command, (stdout, stderr) => {
+                        if (stderr) {
+                            db(command + " utility encountered an error: " + stderr);
+                        } else {
+                            db(command + " utility executed successfully.");
+                        }
+                    });
+                }
+                else
+                    db("next command");
+            })
+            .catch(error => {
+                db("Error: " + error);
+            });
+
+        if (foundCommand !== null) {
+            db("Found supported update manager command: " + foundCommand);
+            break; // Exit the loop once a command is found
         }
-    
-        if (foundCommand === null) {
-            db("No supported update manager commands found on the system.");
-            return;
-        }
-    
-        db("Found supported update manager command: " + foundCommand);
-    
-        // Spawn the found command
-        Util.spawnCommandLineAsyncIO(foundCommand, (stdout, stderr) => {
-            if (stderr) {
-                db(foundCommand + " utility encountered an error: " + stderr);
-            } else {
-                db(foundCommand + " utility executed successfully.");
-            }
-        });
     }
 
+    if (foundCommand === null) {
+        db("No supported update manager commands found on the system.");
+    }
+}
  
 
     // make applet menu visible
