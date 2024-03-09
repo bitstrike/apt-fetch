@@ -250,9 +250,9 @@ class AptFetchApplet extends Applet.IconApplet {
      * @param {string} command The command to check.
      * @returns {boolean} True if the command exists, false otherwise.
      */
-    _findCommand(command) {
+    async _findCommand(command) {
         const Util = imports.misc.util;
-        const GLib = imports.gi.GLib;
+    
         return new Promise((resolve, reject) => {
             Util.spawnCommandLineAsyncIO('which ' + command, (stdout, stderr) => {
                 if (stdout.trim() === "") {
@@ -267,47 +267,43 @@ class AptFetchApplet extends Applet.IconApplet {
             });
         });
     }
+    
+    async _onUpdateMgrClick() {
+        const Util = imports.misc.util;
+        const commands = ["mintupdate", "synaptic"];
+        db("num commands: " + commands.length);
+    
+        let foundCommand = null;
+    
+        // Loop over the list of commands in preferred order
+        for (const command of commands) {
+            db("looking for update utility " + command);
+            const val = await this._findCommand(command);
+    
+            if (val !== false) {
+                foundCommand = command;
+                db("Running update utility via pkexec: " + command);
+                // Spawn the found command
+                Util.spawnCommandLineAsyncIO("pkexec " + command, (stdout, stderr) => {
+                    if (stderr) {
+                        db(command + " utility encountered an error: " + stderr);
+                        Util.spawnCommandLine("zenity --error --text='An error occurred while executing the command" + stderr + "'");
 
-   _onUpdateMgrClick() {
-    const commands = ["mintupdate", "synaptic"];
-    let foundCommand = null;
-    db("num commands: " + commands.length);
-
-    // Loop over the list of commands
-    for (let i = 0; i < commands.length; i++) {
-        const command = commands[i];
-        this._findCommand(command)
-            .then(val => {
-                db("command " + command + " retval " + val);
-                if (val !== false) {
-                    foundCommand = command;
-                    db("breaking loop with command " + command);
-                    // Spawn the found command
-                    Util.spawnCommandLineAsyncIO("pkexec " + command, (stdout, stderr) => {
-                        if (stderr) {
-                            db(command + " utility encountered an error: " + stderr);
-                        } else {
-                            db(command + " utility executed successfully.");
-                        }
-                    });
-                }
-                else
-                    db("next command");
-            })
-            .catch(error => {
-                db("Error: " + error);
-            });
-
+                    } else {
+                        db(command + " utility executed successfully.");
+                    }
+                });
+                break; // Exit the loop once a command is found
+            }
+        }
+    
         if (foundCommand !== null) {
             db("Found supported update manager command: " + foundCommand);
-            break; // Exit the loop once a command is found
+        } else {
+            db("No supported update manager commands found on the system.");
         }
     }
 
-    if (foundCommand === null) {
-        db("No supported update manager commands found on the system.");
-    }
-}
  
 
     // make applet menu visible
