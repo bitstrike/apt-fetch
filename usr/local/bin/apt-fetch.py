@@ -121,7 +121,7 @@ def rotate_log_today():
                 log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]\n")
         else:
             # If the log file doesn't exist or is not readable, print an error message
-            print(f"Error: Log file '{LOG_FILENAME}' is not accessible.")
+            print(f"Error: Log file '{LOG_FILENAME}' is not accessible for rotation.")
     except Exception as e:
         print(f"Error rotating log file: {e}")
 
@@ -509,8 +509,21 @@ def main():
                 
     elif args.json_status:
         stats = get_status(stats)
-        data = {"runs_today" : stats.num_runs, "runs_complete" : stats.num_complete, "last_run" : stats.last_run, "num_archived" : stats.num_archived, "num_installed" : stats.num_installed, "fetch_errors" : stats.fetch_errors, "logfile_exists" : log_exists, "logfile_writeable" : log_writeable, "blah" : "true"}
-        print (json.dumps(data, indent=2))
+        import json
+        
+        data = {
+            "runs_today": stats.num_runs,
+            "runs_complete": stats.num_complete,
+            "last_run": stats.last_run,
+            "num_archived": stats.num_archived,
+            "num_installed": stats.num_installed,
+            "fetch_errors": stats.fetch_errors,
+            "logfile_exists": log_exists,
+            "logfile_writeable": log_writeable
+        }
+        
+        json_data = json.dumps(data, indent=2)
+        print(json_data)
 
     elif args.status:
         print (f"trying {LOG_FILENAME}")

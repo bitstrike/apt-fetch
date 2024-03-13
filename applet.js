@@ -30,7 +30,7 @@ let LastRun = '{"last_run": "none"}';
 let lastNotificationTime = 0;
 const OneHourInSeconds = 60 * 60
 const OneDayInSeconds = 24 * OneHourInSeconds;
-const NotifcationInterval = OneHourInSeconds * 4;
+const NotificationInterval = OneHourInSeconds * 4;
 const UUID = "apt-fetch@bitcrash"; // Applet UUID
 
 // write something to LookingGlass log
@@ -98,11 +98,13 @@ class AptFetchApplet extends Applet.IconApplet {
             // check for daily notification
             if (this._checkNotificationTimeout() == true)
             {
+                db ("this._iconTimer() - notification timeout is true running showNotification...");
                 this._showNotification ("(apt-fetch) Updates Are Available", "Updates are available to be applied to your system.\nOpen Update Manager to apply them.\n")
             }
                 
             if (this._stateCheck() == true) 
             {
+                db ("this.stateCheck() - stateCheck is true running set_applet_icon_symbolic_name...");
                 // Toggle the icon between "inactive" and the original symbolic name
                 if (this._isIconInactive) 
                 {
@@ -121,49 +123,39 @@ class AptFetchApplet extends Applet.IconApplet {
     }
 
     // check if it's time to display the notification message again
-    _checkNotificationTimeout()
-    {
-        // Check if a day has passed since the last notification
-        const currentTime = Math.floor(Date.now() / 1000); // current time in seconds
+    _checkNotificationTimeout() {
+        const now = Math.floor(Date.now() / 1000); // current time in seconds
 
-        try {
-            // Attempt to parse LastRun
-            var parsedData = JSON.parse(LastRun);
-            
-            // Handle parsed data
-            // ...
-            // if updates have been downloaded and desktop has just been logged into
-            if (parsedData.num_archived > 0)
+        try 
+        {            
+            let errors = LastRun.substring(0, LastRun.indexOf("{")).trim();
+            //db ("_checkNotificationTimeout(): errors: " + errors);
+
+            let jsonData = LastRun.substring(LastRun.indexOf("{"));
+            //db ("_checkNotificationTimeout(): jsonData: " + jsonData);
+
+            const lastRunData = JSON.parse(jsonData);
+            const numArchived = lastRunData.num_archived;
+
+            if (numArchived > 0 && lastNotificationTime === 0) 
             {
-                if (lastNotificationTime == 0)
-                {
-                    lastNotificationTime = currentTime;
-                    return true;
-                }
+                lastNotificationTime = now;
+                return true;
             }
-
-            // if time since last notification has expired, and updates are available, notify again
-            if (currentTime - lastNotificationTime >= NotifcationInterval) 
+            else if (now - lastNotificationTime >= NotificationInterval && numArchived > 0) 
             {
-                // don't notify if nothing to update
-                if (parsedData.num_archived > 0)
-                {
-                    // Update the last notification time
-                    db ("_checkNotificationTimeout:parseddata is > 0");
-                    lastNotificationTime = currentTime;
-                    return true
-                }
-            }            
-        }
-        catch (error) {
-            // Handle parsing error
-            console.error("Error parsing LastRun:", error);
-            console.log("LastRun JSON data:", JSON.stringify(JSON.parse(LastRun), null, 2));
-            this._showNotification ("(apt-fetch) JSON error", "The apt-fetch.py command produced unexpected output. This is likely due to an error message related to a system issue.\nCheck /var/log/ for more info.\n")
+                lastNotificationTime = now;
+                return true;
+            }
+        } 
+        catch (error) 
+        {
+            this._showNotification("(apt-fetch) JSON error", "The apt-fetch.py command produced unexpected output. This is likely due to an error message related to a system issue.\nCheck /var/log/ for more info.\n");
         }
 
-        return false
+        return false;
     }
+
     
     // add a notification message to the Cinnamon notification system
     // also this way: GLib.spawn_command_line_async('notify-send "Something" --icon=dialog-information'); 
